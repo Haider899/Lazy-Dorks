@@ -12,16 +12,16 @@ The tool uses GitHub's web interface for searching, so **no API key is needed**.
 ### GitHub Dork Examples
 ```bash
 # Search for passwords related to target
-"app.doart.tech" "password"
+"example.com" "password"
 
 # Find configuration files
-"app.doart.tech" filename:.env
+"example.com" filename:.env
 
 # Look for API keys in specific file types
-"app.doart.tech" "api_key" extension:py
+"example.com" "api_key" extension:py
 
 # Search organization repositories
-org:app.doart.tech
+org:example.com
 
 # Find database credentials
-"app.doart.tech" "DB_PASSWORD"
+"example.com" "DB_PASSWORD"
