@@ -61,18 +61,6 @@ class LazyDorker:
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0"
         ]
-        self.results = {
-            'target': '',
-            'dorks_used': [],
-            'vulnerabilities_found': [],
-            'exposed_files': [],
-            'sensitive_info': [],
-            'admin_panels': [],
-            'backup_files': [],
-            'database_dumps': [],
-            'login_pages': [],
-            'github_findings': []
-        }
         
         # Advanced Google dork categories
         self.google_dork_categories = {
@@ -298,7 +286,7 @@ class LazyDorker:
             ]
         }
 
-        # GitHub Dork Categories - Fixed to handle single target parameter
+        # GitHub Dork Categories
         self.github_dork_categories = {
             'exposed_secrets': [
                 '{} "password"',
@@ -348,17 +336,6 @@ class LazyDorker:
                 '{} "JWT_SECRET"',
                 '{} "SESSION_SECRET"',
                 '{} "ENCRYPTION_SECRET"'
-            ],
-            'company_specific_secrets': [
-                '{} "company" "password"',
-                '{} "internal" "key"',
-                '{} "confidential" "secret"',
-                '{} "proprietary" "api"',
-                '{} "production" "database"',
-                '{} "staging" "config"',
-                '{} "development" "env"',
-                '{} "test" "credential"',
-                '{} "demo" "password"'
             ],
             'configuration_files': [
                 '{} filename:.env',
@@ -446,22 +423,6 @@ class LazyDorker:
                 '{} "username:"',
                 '{} "user:"',
                 '{} "pass:"'
-            ],
-            'sensitive_documentation': [
-                '{} "README" "password"',
-                '{} "readme.md" "secret"',
-                '{} "README.txt" "key"',
-                '{} "INSTALL" "database"',
-                '{} "SETUP" "config"',
-                '{} "TODO" "credential"',
-                '{} "NOTES" "password"'
-            ],
-            'company_repositories': [
-                'org:{}',  # This will use the target as organization
-                'user:{}',  # This will use the target as username
-                '{} in:name',  # Search in repository names
-                '{} in:description',  # Search in repository descriptions
-                '{} in:readme'  # Search in README files
             ]
         }
 
@@ -482,33 +443,236 @@ class LazyDorker:
     def random_delay(self, min_seconds=1, max_seconds=15):
         """
         Add random delay between requests to avoid rate limiting
-        
-        Args:
-            min_seconds (float): Minimum delay in seconds
-            max_seconds (float): Maximum delay in seconds
         """
         delay = random.uniform(min_seconds, max_seconds)
         logger.info(f"{Colors.YELLOW}⏳ Random delay: {delay:.2f} seconds{Colors.ENDC}")
         time.sleep(delay)
 
-    def github_search(self, query, max_results=10):
-        """
-        Perform GitHub code search using web interface (no API key required)
-        
-        Args:
-            query (str): Search query for GitHub
-            max_results (int): Maximum number of results to return
+    # ==================== GOOGLE DORKING METHODS ====================
+
+    def google_search(self, query, num_results=10):
+        """Perform Google search and extract results"""
+        try:
+            headers = {
+                'User-Agent': random.choice(self.user_agents),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
             
-        Returns:
-            list: List of GitHub search results
-        """
+            url = f"https://www.google.com/search?q={quote(query)}&num={num_results}"
+            
+            response = self.session.get(url, headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                return self.parse_google_results(response.text)
+            elif response.status_code == 429:
+                logger.info(f"{Colors.RED}❌ Rate limited by Google. Increasing delay...{Colors.ENDC}")
+                self.random_delay(30, 60)
+                return []
+            else:
+                logger.info(f"{Colors.RED}❌ Google returned status: {response.status_code}{Colors.ENDC}")
+                return []
+                
+        except Exception as e:
+            logger.info(f"{Colors.RED}❌ Google search failed: {e}{Colors.ENDC}")
+            return []
+
+    def parse_google_results(self, html):
+        """Parse Google search results"""
+        soup = BeautifulSoup(html, 'html.parser')
+        results = []
+        
+        for g in soup.find_all('div', class_='g'):
+            anchor = g.find('a')
+            if anchor and anchor.get('href'):
+                link = anchor.get('href')
+                title = anchor.get_text()
+                
+                if link.startswith('/url?q='):
+                    link = link.split('/url?q=')[1].split('&')[0]
+                    
+                if link.startswith('http') and 'google.com' not in link:
+                    results.append({
+                        'title': title.strip(),
+                        'url': link
+                    })
+        
+        return results
+
+    def bing_search(self, query, num_results=10):
+        """Alternative search with Bing"""
         try:
             headers = {
                 'User-Agent': random.choice(self.user_agents),
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
             }
             
-            # GitHub web search (no API key required)
+            url = f"https://www.bing.com/search?q={quote(query)}&count={num_results}"
+            response = self.session.get(url, headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                return self.parse_bing_results(response.text)
+            else:
+                return []
+                
+        except Exception as e:
+            return []
+
+    def parse_bing_results(self, html):
+        """Parse Bing search results"""
+        soup = BeautifulSoup(html, 'html.parser')
+        results = []
+        
+        for li in soup.find_all('li', class_='b_algo'):
+            anchor = li.find('a')
+            if anchor and anchor.get('href'):
+                results.append({
+                    'title': anchor.get_text().strip(),
+                    'url': anchor.get('href')
+                })
+        
+        return results
+
+    def check_url_content(self, url, dork_category):
+        """Check if URL actually contains sensitive content"""
+        try:
+            headers = {
+                'User-Agent': random.choice(self.user_agents)
+            }
+            
+            response = self.session.get(url, headers=headers, timeout=10, verify=False)
+            
+            if response.status_code == 200:
+                content = response.text.lower()
+                
+                sensitive_patterns = {
+                    'password': ['password', 'pwd', 'passwd', 'senha'],
+                    'database': ['database', 'mysql', 'postgresql', 'mongodb'],
+                    'config': ['config', 'configuration', 'settings'],
+                    'api_key': ['api_key', 'secret_key', 'access_key'],
+                    'admin': ['admin', 'administrator', 'wp-admin'],
+                    'backup': ['backup', 'dump', 'export'],
+                    'login': ['login', 'signin', 'authentication']
+                }
+                
+                found_patterns = []
+                for pattern_name, keywords in sensitive_patterns.items():
+                    for keyword in keywords:
+                        if keyword in content:
+                            found_patterns.append(pattern_name)
+                            break
+                
+                if found_patterns:
+                    return {
+                        'url': url,
+                        'category': dork_category,
+                        'patterns_found': found_patterns,
+                        'status_code': response.status_code,
+                        'content_type': response.headers.get('content-type', '')
+                    }
+            
+            return None
+            
+        except Exception as e:
+            return None
+
+    def generate_google_dorks_for_domain(self, domain):
+        """Generate all Google dorks for a specific domain"""
+        all_dorks = []
+        
+        for category, dorks in self.google_dork_categories.items():
+            for dork in dorks:
+                formatted_dork = dork.format(domain)
+                all_dorks.append({
+                    'dork': formatted_dork,
+                    'category': category,
+                    'description': self.get_google_dork_description(category),
+                    'search_type': 'google'
+                })
+        
+        return all_dorks
+
+    def get_google_dork_description(self, category):
+        """Get human-readable description for Google dork category"""
+        descriptions = {
+            'sensitive_directories': 'Sensitive directories and paths',
+            'exposed_config_files': 'Exposed configuration files',
+            'database_exposures': 'Database files and management interfaces',
+            'backup_files': 'Backup and archive files',
+            'log_files': 'Log files with sensitive information',
+            'developer_files': 'Developer and version control files',
+            'admin_interfaces': 'Administrative interfaces and panels',
+            'vulnerable_files': 'Vulnerable and testing files',
+            'exposed_documents': 'Exposed documents and spreadsheets',
+            'api_endpoints': 'API endpoints and documentation',
+            'authentication_pages': 'Authentication and login pages',
+            'sensitive_keywords': 'Files containing sensitive keywords',
+            'wordpress_specific': 'WordPress-specific files and paths'
+        }
+        return descriptions.get(category, 'Google search')
+
+    def perform_google_dork_scan(self, domain, max_dorks_per_category=3):
+        """Perform comprehensive Google dorking scan"""
+        logger.info(f"{Colors.GREEN}🔍 Starting Google dork scan for: {domain}{Colors.ENDC}")
+        
+        all_dorks = self.generate_google_dorks_for_domain(domain)
+        total_dorks = min(len(all_dorks), max_dorks_per_category * len(self.google_dork_categories))
+        
+        logger.info(f"{Colors.CYAN}📚 Generated {total_dorks} Google dorks across {len(self.google_dork_categories)} categories{Colors.ENDC}")
+        
+        results = {
+            'domain': domain,
+            'scan_time': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'categories': {}
+        }
+        
+        for category in self.google_dork_categories.keys():
+            category_dorks = [d for d in all_dorks if d['category'] == category][:max_dorks_per_category]
+            results['categories'][category] = {
+                'dorks_used': [],
+                'found_results': []
+            }
+            
+            logger.info(f"{Colors.BLUE}📂 Scanning {category}...{Colors.ENDC}")
+            
+            for dork_info in category_dorks:
+                dork = dork_info['dork']
+                results['categories'][category]['dorks_used'].append(dork)
+                
+                logger.info(f"{Colors.CYAN}   🔎 Dork: {dork}{Colors.ENDC}")
+                
+                self.random_delay(2, 8)
+                
+                search_results = []
+                google_results = self.google_search(dork)
+                search_results.extend(google_results)
+                
+                if not search_results:
+                    bing_results = self.bing_search(dork)
+                    search_results.extend(bing_results)
+                
+                for result in search_results[:5]:
+                    content_check = self.check_url_content(result['url'], category)
+                    if content_check:
+                        results['categories'][category]['found_results'].append(content_check)
+                        logger.info(f"{Colors.GREEN}     ✅ Found: {result['url']}{Colors.ENDC}")
+        
+        return results
+
+    # ==================== GITHUB DORKING METHODS ====================
+
+    def github_search(self, query, max_results=10):
+        """Perform GitHub code search using web interface"""
+        try:
+            headers = {
+                'User-Agent': random.choice(self.user_agents),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            }
+            
             url = f"https://github.com/search?q={quote(query)}&type=code"
             
             logger.info(f"{Colors.CYAN}   🌐 Searching GitHub: {query}{Colors.ENDC}")
@@ -535,20 +699,10 @@ class LazyDorker:
             return []
 
     def parse_github_web_results(self, html, max_results=10):
-        """
-        Parse GitHub web search results
-        
-        Args:
-            html (str): HTML content of GitHub search results
-            max_results (int): Maximum results to return
-            
-        Returns:
-            list: Parsed results
-        """
+        """Parse GitHub web search results"""
         soup = BeautifulSoup(html, 'html.parser')
         results = []
         
-        # Find code search result items
         result_items = soup.find_all('div', class_='code-list-item')
         
         for item in result_items[:max_results]:
@@ -561,97 +715,52 @@ class LazyDorker:
                     file_name = file_link.get_text(strip=True)
                     file_url = "https://github.com" + file_link.get('href')
                     
-                    # Extract code snippet if available
-                    code_snippet = ""
-                    code_block = item.find('div', class_='code-excerpt')
-                    if code_block:
-                        code_snippet = code_block.get_text(strip=True)[:200]  # First 200 chars
-                    
                     results.append({
                         'type': 'github',
                         'repository': repo_name,
                         'file_path': file_name,
                         'url': file_url,
-                        'code_snippet': code_snippet,
                         'description': f"File: {file_name} in {repo_name}"
                     })
-            except Exception as e:
+            except Exception:
                 continue
                 
         return results
 
     def generate_github_dorks_for_target(self, target):
-        """
-        Generate GitHub dorks for a specific target
-        
-        Args:
-            target (str): Target domain or company name
-            
-        Returns:
-            list: All formatted GitHub dorks
-        """
+        """Generate GitHub dorks for a specific target"""
         all_dorks = []
         
         for category, dorks in self.github_dork_categories.items():
             for dork in dorks:
                 try:
-                    # Handle dorks with single placeholder
-                    if dork.count('{}') == 1:
-                        formatted_dork = dork.format(target)
-                    else:
-                        # For dorks that might have multiple placeholders, use only the target
-                        formatted_dork = dork.replace('{}', target, 1)
-                        # Remove any remaining placeholders
-                        formatted_dork = formatted_dork.replace('{}', target)
-                        
+                    formatted_dork = dork.format(target)
                     all_dorks.append({
                         'dork': formatted_dork,
                         'category': f"github_{category}",
-                        'description': self.get_github_dork_description(category, dork),
+                        'description': self.get_github_dork_description(category),
                         'search_type': 'github'
                     })
                 except Exception as e:
-                    logger.info(f"{Colors.RED}❌ Error formatting dork: {dork} - {e}{Colors.ENDC}")
                     continue
         
         return all_dorks
 
-    def get_github_dork_description(self, category, dork):
-        """
-        Get human-readable description for GitHub dork category
-        
-        Args:
-            category (str): Dork category
-            dork (str): The dork string
-            
-        Returns:
-            str: Human-readable description
-        """
+    def get_github_dork_description(self, category):
+        """Get human-readable description for GitHub dork category"""
         descriptions = {
             'exposed_secrets': 'Exposed secrets and API keys',
-            'company_specific_secrets': 'Company-specific sensitive information',
             'configuration_files': 'Configuration files with secrets',
             'database_dumps': 'Database dumps and SQL files',
             'log_files': 'Log files with sensitive data',
             'backup_files': 'Backup and archive files',
             'api_keys_in_code': 'API keys hardcoded in source code',
-            'hardcoded_credentials': 'Hardcoded usernames and passwords',
-            'sensitive_documentation': 'Documentation containing secrets',
-            'company_repositories': 'Company-specific repositories'
+            'hardcoded_credentials': 'Hardcoded usernames and passwords'
         }
         return descriptions.get(category, 'GitHub code search')
 
     def perform_github_dork_scan(self, target, max_dorks_per_category=3):
-        """
-        Perform comprehensive GitHub dorking scan
-        
-        Args:
-            target (str): Target domain or company name
-            max_dorks_per_category (int): Maximum dorks per category
-            
-        Returns:
-            dict: GitHub scan results
-        """
+        """Perform comprehensive GitHub dorking scan"""
         logger.info(f"{Colors.GREEN}🔍 Starting GitHub dork scan for: {target}{Colors.ENDC}")
         
         all_dorks = self.generate_github_dorks_for_target(target)
@@ -665,7 +774,6 @@ class LazyDorker:
             'categories': {}
         }
         
-        # Process GitHub dorks by category
         for category in self.github_dork_categories.keys():
             github_category = f"github_{category}"
             category_dorks = [d for d in all_dorks if d['category'] == github_category][:max_dorks_per_category]
@@ -682,38 +790,24 @@ class LazyDorker:
                 
                 logger.info(f"{Colors.CYAN}   🔎 GitHub Dork: {dork}{Colors.ENDC}")
                 
-                # Add random delay before each GitHub search
                 self.random_delay(3, 8)
                 
-                # Perform GitHub search
                 github_results = self.github_search(dork)
                 
                 if github_results:
-                    for result in github_results[:5]:  # Limit to first 5 results per dork
-                        # Check if result actually contains sensitive content
+                    for result in github_results[:5]:
                         enhanced_result = self.check_github_content(result)
                         results['categories'][github_category]['found_results'].append(enhanced_result)
-                else:
-                    logger.info(f"{Colors.YELLOW}     ❌ No results found{Colors.ENDC}")
         
         return results
 
     def check_github_content(self, result):
-        """
-        Check if GitHub result actually contains sensitive content
-        
-        Args:
-            result (dict): GitHub search result
-            
-        Returns:
-            dict: Enhanced result with content analysis
-        """
+        """Check if GitHub result actually contains sensitive content"""
         try:
             headers = {
                 'User-Agent': random.choice(self.user_agents)
             }
             
-            # For GitHub, we can check the raw file content
             raw_url = result['url'].replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
             
             response = self.session.get(raw_url, headers=headers, timeout=10)
@@ -721,7 +815,6 @@ class LazyDorker:
             if response.status_code == 200:
                 content = response.text
                 
-                # Check for sensitive patterns in the content
                 sensitive_patterns = {
                     'password': ['password', 'pwd', 'passwd'],
                     'api_key': ['api_key', 'apikey', 'api.key'],
@@ -729,9 +822,7 @@ class LazyDorker:
                     'token': ['token', 'access_token', 'bearer_token'],
                     'private_key': ['private_key', 'rsa private', 'ssh-rsa'],
                     'database': ['database', 'db_password', 'mysql'],
-                    'aws_key': ['aws_access_key_id', 'aws_secret_access_key'],
-                    'email': ['@', 'smtp', 'mail'],
-                    'url': ['http://', 'https://', 'ftp://']
+                    'aws_key': ['aws_access_key_id', 'aws_secret_access_key']
                 }
                 
                 found_patterns = []
@@ -744,22 +835,6 @@ class LazyDorker:
                 if found_patterns:
                     result['sensitive_patterns'] = found_patterns
                     result['content_checked'] = True
-                    
-                    # Extract a sample of the sensitive content
-                    sample_content = ""
-                    for pattern in found_patterns[:2]:  # Show first 2 patterns
-                        for keyword in sensitive_patterns[pattern]:
-                            if keyword.lower() in content.lower():
-                                idx = content.lower().find(keyword.lower())
-                                if idx != -1:
-                                    start = max(0, idx - 50)
-                                    end = min(len(content), idx + len(keyword) + 50)
-                                    sample_content = content[start:end].replace('\n', ' ').strip()
-                                    break
-                        if sample_content:
-                            break
-                    
-                    result['sample_content'] = sample_content[:200]  # Limit sample size
                     return result
             
             result['content_checked'] = False
@@ -770,87 +845,54 @@ class LazyDorker:
             result['error'] = str(e)
             return result
 
-    # ... (Include all the existing Google dorking methods)
+    # ==================== REPORT GENERATION ====================
 
-    def google_search(self, query, num_results=10):
-        """Perform Google search and extract results"""
-        try:
-            headers = {
-                'User-Agent': random.choice(self.user_agents),
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-            }
-            
-            # Google search URL
-            url = f"https://www.google.com/search?q={quote(query)}&num={num_results}"
-            
-            response = self.session.get(url, headers=headers, timeout=15)
-            
-            if response.status_code == 200:
-                return self.parse_google_results(response.text)
-            elif response.status_code == 429:
-                logger.info(f"{Colors.RED}❌ Rate limited by Google. Increasing delay...{Colors.ENDC}")
-                self.random_delay(30, 60)
-                return []
-            else:
-                logger.info(f"{Colors.RED}❌ Google returned status: {response.status_code}{Colors.ENDC}")
-                return []
-                
-        except Exception as e:
-            logger.info(f"{Colors.RED}❌ Google search failed: {e}{Colors.ENDC}")
-            return []
+    def generate_google_report(self, scan_results):
+        """Generate Google dorking report"""
+        domain = scan_results['domain']
+        
+        report = f"""
+{Colors.PURPLE}
+╔══════════════════════════════════════════════╗
+║              GOOGLE DORKER REPORT            ║
+║                 {scan_results['scan_time']}                 ║
+╚══════════════════════════════════════════════╝
+{Colors.ENDC}
 
-    def parse_google_results(self, html):
-        """Parse Google search results"""
-        soup = BeautifulSoup(html, 'html.parser')
-        results = []
+{Colors.GREEN}🎯 TARGET: {domain}{Colors.ENDC}
+{Colors.CYAN}📊 SCAN SUMMARY:{Colors.ENDC}
+"""
         
-        # Find all search result links
-        for g in soup.find_all('div', class_='g'):
-            anchor = g.find('a')
-            if anchor and anchor.get('href'):
-                link = anchor.get('href')
-                title = anchor.get_text()
-                
-                # Filter out Google's own links
-                if link.startswith('/url?q='):
-                    link = link.split('/url?q=')[1].split('&')[0]
-                    
-                if link.startswith('http') and 'google.com' not in link:
-                    results.append({
-                        'title': title.strip(),
-                        'url': link
-                    })
+        total_findings = 0
+        for category, data in scan_results['categories'].items():
+            findings_count = len(data['found_results'])
+            total_findings += findings_count
+            status_icon = "✅" if findings_count > 0 else "❌"
+            report += f"   {status_icon} {category.replace('_', ' ').title()}: {findings_count} findings\n"
         
-        return results
-
-    def perform_dork_scan(self, domain, max_dorks_per_category=5):
-        """Perform comprehensive Google dorking scan"""
-        logger.info(f"{Colors.GREEN}🎯 Starting Google dork scan for: {domain}{Colors.ENDC}")
+        report += f"\n{Colors.ORANGE}📈 TOTAL FINDINGS: {total_findings}{Colors.ENDC}\n"
         
-        # This would contain the Google dork scanning logic
-        # For now, return empty results for Google scan
-        return {
-            'domain': domain,
-            'scan_time': time.strftime('%Y-%m-%d %H:%M:%S'),
-            'categories': {}
-        }
+        for category, data in scan_results['categories'].items():
+            if data['found_results']:
+                report += f"\n{Colors.RED}🚨 {category.upper().replace('_', ' ')} FINDINGS:{Colors.ENDC}\n"
+                for finding in data['found_results']:
+                    report += f"   🔗 URL: {finding['url']}\n"
+                    report += f"   📁 Category: {finding['category']}\n"
+                    report += f"   🎯 Patterns: {', '.join(finding['patterns_found'])}\n"
+                    report += f"   📊 Status: {finding['status_code']}\n"
+                    report += "   ──────────────────────\n"
+        
+        return report
 
     def generate_combined_report(self, google_results, github_results):
-        """
-        Generate comprehensive report combining Google and GitHub findings
-        """
+        """Generate comprehensive combined report"""
         target = google_results.get('domain', github_results.get('target', 'Unknown'))
         
         report = f"""
 {Colors.PURPLE}
 ╔══════════════════════════════════════════════╗
 ║           LAZY DORKER COMBINED REPORT        ║
-║                 {github_results.get('scan_time', 'Unknown')}                 ║
+║                 {google_results.get('scan_time', 'Unknown')}                 ║
 ╚══════════════════════════════════════════════╝
 {Colors.ENDC}
 
@@ -858,45 +900,44 @@ class LazyDorker:
 {Colors.CYAN}📊 SCAN SUMMARY:{Colors.ENDC}
 """
         
-        # GitHub findings summary
+        google_findings = 0
+        for category, data in google_results.get('categories', {}).items():
+            findings_count = len(data.get('found_results', []))
+            google_findings += findings_count
+        
         github_findings = 0
         for category, data in github_results.get('categories', {}).items():
             findings_count = len(data.get('found_results', []))
             github_findings += findings_count
         
-        total_findings = github_findings
+        total_findings = google_findings + github_findings
         
+        report += f"   🔍 Google Dorking: {google_findings} findings\n"
         report += f"   💻 GitHub Dorking: {github_findings} findings\n"
         report += f"\n{Colors.ORANGE}📈 TOTAL FINDINGS: {total_findings}{Colors.ENDC}\n"
         
-        # GitHub findings details
+        # Google findings
+        if google_findings > 0:
+            report += f"\n{Colors.RED}🔍 GOOGLE FINDINGS:{Colors.ENDC}\n"
+            for category, data in google_results.get('categories', {}).items():
+                if data.get('found_results'):
+                    for finding in data['found_results'][:3]:
+                        report += f"   📁 {category}: {finding['url']}\n"
+                        report += f"   🎯 Patterns: {', '.join(finding['patterns_found'])}\n"
+                        report += "   ──────────────────────\n"
+        
+        # GitHub findings
         if github_findings > 0:
-            report += f"\n{Colors.RED}🚨 GITHUB FINDINGS:{Colors.ENDC}\n"
+            report += f"\n{Colors.RED}💻 GITHUB FINDINGS:{Colors.ENDC}\n"
             for category, data in github_results.get('categories', {}).items():
                 if data.get('found_results'):
-                    report += f"\n   📂 {category.replace('github_', '').replace('_', ' ').title()}:\n"
-                    for finding in data['found_results'][:5]:  # Show first 5 per category
-                        report += f"      🔗 Repository: {finding.get('repository', 'Unknown')}\n"
-                        report += f"      📁 File: {finding.get('file_path', 'Unknown')}\n"
-                        report += f"      🌐 URL: {finding.get('url', 'Unknown')}\n"
+                    for finding in data['found_results'][:3]:
+                        report += f"   📁 {category.replace('github_', '')}: {finding['repository']}\n"
+                        report += f"   📄 File: {finding['file_path']}\n"
+                        report += f"   🔗 URL: {finding['url']}\n"
                         if finding.get('sensitive_patterns'):
-                            report += f"      ⚠️  Sensitive Data: {', '.join(finding['sensitive_patterns'])}\n"
-                        if finding.get('sample_content'):
-                            report += f"      📝 Sample: {finding['sample_content']}...\n"
-                        report += "      ──────────────────────\n"
-        else:
-            report += f"\n{Colors.YELLOW}📭 No sensitive findings in GitHub repositories.{Colors.ENDC}\n"
-        
-        # Dorks used
-        report += f"\n{Colors.BLUE}🔍 GITHUB DORKS USED:{Colors.ENDC}\n"
-        
-        # GitHub dorks
-        if github_results.get('categories'):
-            for category, data in github_results.get('categories', {}).items():
-                if data.get('dorks_used'):
-                    report += f"\n   📂 {category.replace('github_', '').replace('_', ' ').title()}:\n"
-                    for dork in data['dorks_used'][:3]:  # Show first 3 dorks per category
-                        report += f"      • {dork}\n"
+                            report += f"   ⚠️  Sensitive: {', '.join(finding['sensitive_patterns'])}\n"
+                        report += "   ──────────────────────\n"
         
         report += f"""
 {Colors.ORANGE}
@@ -905,35 +946,88 @@ class LazyDorker:
 ╚══════════════════════════════════════════════╝{Colors.ENDC}
 
 {Colors.GREEN}🔒 SECURITY ACTIONS:{Colors.ENDC}
-   • Remove exposed secrets from GitHub repositories
-   • Implement pre-commit hooks to detect secrets
-   • Use GitHub secret scanning service
-   • Rotate all exposed API keys and passwords
-   • Review and clean up sensitive documentation
+   • Remove exposed sensitive files from web servers
+   • Scan and remove secrets from GitHub repositories
+   • Implement proper access controls
+   • Delete unnecessary backup files
+   • Rotate exposed API keys and passwords
 
 {Colors.BLUE}📈 NEXT STEPS:{Colors.ENDC}
    • Verify all findings manually
-   • Check for additional organization repositories
-   • Implement automated secret detection
-   • Conduct internal security awareness training
+   • Implement security headers
+   • Conduct penetration testing
    • Monitor for new exposures regularly
 
 {Colors.PURPLE}
 Generated by 🦥 LAZY DORKER v2.1
-GitHub Dorking - No API Key Required!
+Complete Google & GitHub Dorking Solution!
 Created by Haider (Lazy_Hacks)
 {Colors.ENDC}
 """
         return report
 
+    def quick_scan(self, domain):
+        """Quick scan with most effective dorks"""
+        quick_dorks = [
+            f'site:{domain} inurl:"admin"',
+            f'site:{domain} inurl:"login"',
+            f'site:{domain} inurl:"config"',
+            f'site:{domain} filetype:env DB_PASSWORD',
+            f'site:{domain} ext:sql "CREATE TABLE"',
+            f'site:{domain} inurl:".git"',
+            f'site:{domain} "wp-config.php"',
+            f'{domain} "password"',
+            f'{domain} filename:.env',
+            f'{domain} "api_key"'
+        ]
+        
+        logger.info(f"{Colors.GREEN}🚀 Quick scan for: {domain}{Colors.ENDC}")
+        
+        results = []
+        for dork in quick_dorks:
+            logger.info(f"{Colors.CYAN}🔍 Checking: {dork}{Colors.ENDC}")
+            
+            self.random_delay(1, 5)
+            
+            if 'site:' in dork:
+                # Google dork
+                search_results = self.google_search(dork)
+                for result in search_results[:2]:
+                    results.append({
+                        'dork': dork,
+                        'url': result['url'],
+                        'title': result['title'],
+                        'type': 'google'
+                    })
+                    logger.info(f"{Colors.GREEN}   ✅ Found: {result['url']}{Colors.ENDC}")
+            else:
+                # GitHub dork
+                github_results = self.github_search(dork)
+                for result in github_results[:2]:
+                    results.append({
+                        'dork': dork,
+                        'url': result['url'],
+                        'title': result['description'],
+                        'type': 'github'
+                    })
+                    logger.info(f"{Colors.GREEN}   ✅ Found: {result['description']}{Colors.ENDC}")
+        
+        return results
+
 def main():
     """Main function to run LAZY DORKER"""
     parser = argparse.ArgumentParser(
         description='LAZY DORKER - Advanced Google & GitHub Dorking Tool for Security Researchers',
-        epilog='Example: python3 lazy_dorker.py -d example.com --github'
+        epilog='''
+Examples:
+  python3 lazy_dorker.py -d example.com              # Google dorking only
+  python3 lazy_dorker.py -d example.com --github     # GitHub dorking only  
+  python3 lazy_dorker.py -d example.com --combined   # Combined scan
+  python3 lazy_dorker.py -d example.com --quick      # Quick scan
+        '''
     )
     parser.add_argument('-d', '--domain', required=True, help='Target domain to scan')
-    parser.add_argument('-q', '--quick', action='store_true', help='Perform quick scan (12 most effective dorks)')
+    parser.add_argument('-q', '--quick', action='store_true', help='Perform quick scan (mixed Google & GitHub dorks)')
     parser.add_argument('-g', '--github', action='store_true', help='Perform GitHub dorking only')
     parser.add_argument('-c', '--combined', action='store_true', help='Perform combined Google and GitHub dorking')
     parser.add_argument('-o', '--output', help='Save report to custom filename')
@@ -954,7 +1048,19 @@ def main():
     logger.info(f"{Colors.YELLOW}⚠️  Educational use only - Respect robots.txt and terms of service{Colors.ENDC}")
     logger.info(f"{Colors.CYAN}⏰ Delay range: {args.min_delay}-{args.max_delay} seconds between dorks{Colors.ENDC}")
     
-    if args.github:
+    if args.quick:
+        # Quick scan (mixed Google & GitHub)
+        results = tool.quick_scan(args.domain)
+        
+        print(f"\n{Colors.GREEN}🚀 QUICK SCAN RESULTS:{Colors.ENDC}")
+        for result in results:
+            icon = "🔍" if result['type'] == 'google' else "💻"
+            print(f"   {icon} {result['url']}")
+            print(f"   📝 {result['title']}")
+            print(f"   🔎 Dork: {result['dork']}")
+            print("   ──────────────────────")
+            
+    elif args.github:
         # GitHub dorking only
         github_results = tool.perform_github_dork_scan(args.domain, args.max_dorks)
         report = tool.generate_combined_report({}, github_results)
@@ -962,28 +1068,30 @@ def main():
         
     elif args.combined:
         # Combined Google and GitHub dorking
-        google_results = tool.perform_dork_scan(args.domain, args.max_dorks)
+        logger.info(f"{Colors.GREEN}🔄 Starting combined Google & GitHub scan...{Colors.ENDC}")
+        google_results = tool.perform_google_dork_scan(args.domain, args.max_dorks)
         github_results = tool.perform_github_dork_scan(args.domain, args.max_dorks)
         report = tool.generate_combined_report(google_results, github_results)
         print(report)
         
-    elif args.quick:
-        # Quick Google scan
-        logger.info(f"{Colors.YELLOW}⚠️  Quick scan currently supports only Google dorking{Colors.ENDC}")
-        # Add quick scan logic here if needed
     else:
-        # Google dorking only
-        scan_results = tool.perform_dork_scan(args.domain, args.max_dorks)
-        report = tool.generate_combined_report(scan_results, {})
+        # Default: Google dorking only
+        google_results = tool.perform_google_dork_scan(args.domain, args.max_dorks)
+        report = tool.generate_google_report(google_results)
         print(report)
     
-    # Save report
-    if args.github or args.combined or (not args.quick and not args.github and not args.combined):
+    # Save report for all modes except quick scan
+    if not args.quick:
         if args.output:
             report_filename = f"dork_results/{args.output}"
         else:
             timestamp = int(time.time())
-            scan_type = "github" if args.github else "combined" if args.combined else "google"
+            if args.github:
+                scan_type = "github"
+            elif args.combined:
+                scan_type = "combined"
+            else:
+                scan_type = "google"
             report_filename = f"dork_results/{scan_type}_scan_{args.domain}_{timestamp}.txt"
         
         with open(report_filename, 'w', encoding='utf-8') as f:
