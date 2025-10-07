@@ -9,19 +9,32 @@ The tool uses GitHub's web interface for searching, so **no API key is needed**.
 3. **Content Verification**: Checks raw files for actual sensitive content
 4. **Pattern Detection**: Identifies passwords, API keys, tokens in code
 
-### GitHub Dork Examples
+### Basic Syntax
 ```bash
-# Search for passwords related to target
-"example.com" "password"
+python3 lazy_dorker.py -d TARGET_DOMAIN [OPTIONS]
 
-# Find configuration files
-"example.com" filename:.env
+##**Scan Modes**
+Mode	Command	Description
+Google Only (Default)	python3 lazy_dorker.py -d example.com	Comprehensive Google dorking
+GitHub Only	python3 lazy_dorker.py -d example.com --github	GitHub code and secrets search
+Combined	python3 lazy_dorker.py -d example.com --combined	Both Google & GitHub dorking
+Quick Scan	python3 lazy_dorker.py -d example.com --quick	Fast mixed scan with top dorks
 
-# Look for API keys in specific file types
-"example.com" "api_key" extension:py
+#Examples
+# Comprehensive Google dorking
+python3 lazy_dorker.py -d example.com
 
-# Search organization repositories
-org:example.com
+# GitHub secrets search only
+python3 lazy_dorker.py -d example.com --github
 
-# Find database credentials
-"example.com" "DB_PASSWORD"
+# Complete reconnaissance (Google + GitHub)
+python3 lazy_dorker.py -d example.com --combined
+
+# Quick mixed scan
+python3 lazy_dorker.py -d example.com --quick
+
+# Custom parameters
+python3 lazy_dorker.py -d example.com --combined --max-dorks 5 --min-delay 2 --max-delay 10
+
+# Save to custom file
+python3 lazy_dorker.py -d example.com --combined -o my_scan.txt
