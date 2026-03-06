@@ -94,17 +94,49 @@ To ensure a welcoming, inclusive, and respectful environment for all participant
 
 This project is proudly licensed under the [MIT License](LICENSE), promoting open collaboration and usage.
 
-## ⭐ Support the Project
+---
+
+<p align="center">
+  <a href="https://github.com/Haider899/Lazy-Dorks/stargazers">
+    <img src="https://img.shields.io/github/stars/Haider899/Lazy-Dorks?style=social" alt="GitHub stars">
+  </a>
+  <a href="https://github.com/Haider899/Lazy-Dorks/forks">
+    <img src="https://img.shields.io/github/forks/Haider899/Lazy-Dorks?style=social" alt="GitHub forks">
+  </a>
+</p>
+
+### ⭐ Support the Project
 
 If Lazy-Dorks has proven valuable in your security research, please consider giving it a star on GitHub! Your support helps us grow and improve.
 
-## 🛠️ Built With
+### 🛠️ Built With
 
-*   Python
-*   Requests
-*   BeautifulSoup4
-*   dnspython
+<p align="center">
+  <a href="https://www.python.org/">
+    <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  </a>
+  <a href="https://github.com/">
+    <img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub">
+  </a>
+  <img src="https://img.shields.io/badge/Open%20Source-30A3DC?style=for-the-badge&logo=opensourceinitiative&logoColor=white" alt="Open Source">
+</p>
 
-## ❤️ Made with Love
+### 📊 Repository Stats
+
+<p align="center">
+  <img src="https://img.shields.io/github/last-commit/Haider899/Lazy-Dorks?style=for-the-badge" alt="Last Commit">
+  <img src="https://img.shields.io/github/repo-size/Haider899/Lazy-Dorks?style=for-the-badge" alt="Repo Size">
+  <img src="https://img.shields.io/github/issues/Haider899/Lazy-Dorks?style=for-the-badge" alt="Open Issues">
+</p>
+
+### 🔗 Connect
+
+<p align="center">
+  <a href="https://github.com/Haider899">
+    <img src="https://img.shields.io/github/followers/Haider899?style=social" alt="GitHub Followers">
+  </a>
+</p>
+
+### ❤️ Made with Love
 
 This project was created with ❤️ for the security community. Support open-source security tools!
